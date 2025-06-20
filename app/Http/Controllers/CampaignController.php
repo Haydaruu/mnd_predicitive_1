@@ -18,10 +18,31 @@ class CampaignController extends Controller
 {
     public function index()
     {
-        $campaigns = Campaign::withCount('nasbahs')->paginate(10);
+        $campaigns = Campaign::withCount('nasbahs')
+            ->orderBy('created_at', 'desc')
+            ->paginate(10);
 
         return Inertia::render('campaign/index', [
             'campaigns' => $campaigns,
+        ]);
+    }
+
+    public function show(Campaign $campaign)
+    {
+        $stats = [
+            'total_numbers' => $campaign->nasbahs()->count(),
+            'called_numbers' => $campaign->nasbahs()->where('is_called', true)->count(),
+            'remaining_numbers' => $campaign->nasbahs()->where('is_called', false)->count(),
+            'total_calls' => $campaign->calls()->count(),
+            'answered_calls' => $campaign->calls()->where('status', 'answered')->count(),
+            'failed_calls' => $campaign->calls()->where('status', 'failed')->count(),
+            'busy_calls' => $campaign->calls()->where('status', 'busy')->count(),
+            'no_answer_calls' => $campaign->calls()->where('status', 'no_answer')->count(),
+        ];
+
+        return Inertia::render('campaign/show', [
+            'campaign' => $campaign,
+            'stats' => $stats,
         ]);
     }
 
@@ -32,82 +53,37 @@ class CampaignController extends Controller
 
     public function upload(Request $request)
     {
-    $request->validate([
-        'campaign_name' => 'required|string',
-        'product_type' => 'required|string',
-        'file' => 'required|file',
-    ]);
-
-    $path = $request->file('file')->store('campaign_files');
-
-    $campaign = Campaign::create([
-        'campaign_name' => $request->campaign_name,
-        'product_type' => $request->product_type,
-        'dialing_type' => 'predictive',
-        'created_by' => auth()->user()->name,
-        'file_path' => $path,
-    ]);
-
-    
-
-     Log::info('Upload Debug', [
-    'mime' => $request->file('file')->getMimeType(),
-    'ext' => $request->file('file')->getClientOriginalExtension(),
-]);
-
-    Log::info('✅ Campaign file stored', ['path' => $path]);
-
-    // Pastikan file-nya benar-benar tersimpan
-    if (!Storage::exists($path)) {
-        Log::error('❌ FILE BELUM ADA DI STORAGE!', ['path' => $path]);
-    }
-
-
-    switch ($request->product_type) {
-        case 'akulaku':  
-            ProcessAkulakuImport::dispatch($path, $campaign->id);
-            break;
-        case 'shopee':
-            Excel::import(new ShopeeImport($campaign->id), $request->file('file'));
-            break;
-        default:
-            return redirect()->back()->withErrors(['product_type' => 'Tipe produk tidak dikenali.']);
-    }
-
-        return back()->with('success', 'Campaign uploaded successfully.');
-}
-
-
-
-    public function routeToAgent()
-    {
-        $nasabah = Nasbah::where('is_called', false)->first();
-
-        if (!$nasabah) {
-             return response()->json(['message' => 'Tidak ada nasabah tersedia'], 404);
-            }
-
-        $agent = Agent::where('status', 'idle')->inRandomOrder()->first();
-
-        if (!$agent) {
-            return response()->json(['message' => 'Tidak ada agent tersedia'], 404);
-        }
-
-        $callerId = CallerId::where('is_active', true)->inRandomOrder()->first();
-
-        $call = Call::create([
-            'nasabah_id' => $nasabah->id,
-            'agent_id' => $agent->id,
-            'caller_id' => $callerId->id,
-            'campaign_id' => $nasabah->campaign_id,
-            'status' => 'ringing',
+        $request->validate([
+            'campaign_name' => 'required|string',
+            'product_type' => 'required|string',
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB max
         ]);
 
-        $nasabah->update(['is_called' => true]);
-        $agent->update(['status' => 'busy']);
+        $path = $request->file('file')->store('campaign_files');
 
-        event(new CallRouted($agent, $nasabah)); // step 5 nanti
+        $campaign = Campaign::create([
+            'campaign_name' => $request->campaign_name,
+            'product_type' => $request->product_type,
+            'dialing_type' => 'predictive',
+            'created_by' => auth()->user()->name,
+            'file_path' => $path,
+            'status' => 'pending',
+            'is_active' => false,
+        ]);
 
-        return response()->json(['message' => 'Call routed', 'call_id' => $call->id]);
+        Log::info('✅ Campaign created', ['id' => $campaign->id, 'path' => $path]);
+
+        // Process the file based on product type
+        switch ($request->product_type) {
+            case 'akulaku':  
+                ProcessAkulakuImport::dispatch($path, $campaign->id);
+                break;
+            default:
+                // For other product types, use the same import logic for now
+                ProcessAkulakuImport::dispatch($path, $campaign->id);
+                break;
+        }
+
+        return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully and is being processed.');
     }
 }

@@ -16,6 +16,21 @@ configureEcho({
     enabledTransports: ['ws'],
 });
 
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+if (csrfToken) {
+  const originalFetch = window.fetch;
+  window.fetch = (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    headers.set('X-CSRF-TOKEN', csrfToken);
+
+    return originalFetch(input, {
+      ...init,
+      headers,
+      credentials: 'include', // ⬅️ WAJIB untuk session-based auth
+    });
+  };
+}
+
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 createInertiaApp({
