@@ -8,10 +8,11 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/campaigns/{campaign}/start', [PredictiveDialerController::class, 'start']);
-    Route::post('/campaigns/{campaign}/stop', [PredictiveDialerController::class, 'stop']);
-    Route::post('/campaigns/{campaign}/pause', [PredictiveDialerController::class, 'pause']);
-    Route::post('/campaigns/{campaign}/resume', [PredictiveDialerController::class, 'resume']);
-    Route::get('/campaigns/{campaign}/status', [PredictiveDialerController::class, 'status']);
+// Campaign control routes - menggunakan web middleware untuk session-based auth
+Route::middleware(['web', 'auth'])->group(function () {
+    Route::post('/campaigns/{campaign}/start', [PredictiveDialerController::class, 'start'])->name('api.campaign.start');
+    Route::post('/campaigns/{campaign}/stop', [PredictiveDialerController::class, 'stop'])->name('api.campaign.stop');
+    Route::post('/campaigns/{campaign}/pause', [PredictiveDialerController::class, 'pause'])->name('api.campaign.pause');
+    Route::post('/campaigns/{campaign}/resume', [PredictiveDialerController::class, 'resume'])->name('api.campaign.resume');
+    Route::get('/campaigns/{campaign}/status', [PredictiveDialerController::class, 'status'])->name('api.campaign.status');
 });

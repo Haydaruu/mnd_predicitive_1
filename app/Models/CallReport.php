@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class CallReport extends Model
 {
-    protected $filliable =[
+    protected $fillable = [
         'campaign_id',
         'agent_id',
         'total_calls',

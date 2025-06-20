@@ -36,33 +36,34 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
+                credentials: 'include', // Important for session-based auth
             });
 
-            if (response.ok) {
-                const data = await response.json();
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Response error:', response.status, errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
                 onStatusChange?.(data.campaign);
                 
                 // Show success message
-                alert(`Campaign ${action} successfully!`);
+                console.log(`✅ Campaign ${action} successfully!`);
                 
                 // Reload page data
                 router.reload({ only: ['campaigns', 'campaign'] });
             } else {
-                const errorText = await response.text();
-                let errorMessage = 'Action failed';
-                
-                try {
-                    const errorData = JSON.parse(errorText);
-                    errorMessage = errorData.message || errorMessage;
-                } catch {
-                    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-                }
-                
+                const errorMessage = data.message || `Failed to ${action} campaign`;
+                console.error(`❌ ${errorMessage}`);
                 alert(errorMessage);
             }
         } catch (error) {
-            console.error('Action failed:', error);
+            console.error(`❌ Action failed:`, error);
             alert(`Action failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setIsLoading(false);

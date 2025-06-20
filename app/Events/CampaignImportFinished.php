@@ -22,7 +22,7 @@ class CampaignImportFinished implements ShouldBroadcast
 
     public function __construct($campaignId)
     {
-        $this->camapaignId = $campaignId;
+        $this->campaignId = $campaignId;
     }
 
     /**
@@ -32,7 +32,7 @@ class CampaignImportFinished implements ShouldBroadcast
      */
     public function broadcastOn()
     {
-        return new Channel('channel-name');
+        return new Channel('campaign-import');
     }
     
      public function broadcastAs()

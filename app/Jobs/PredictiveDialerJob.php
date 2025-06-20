@@ -33,9 +33,20 @@ class PredictiveDialerJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('🎯 Predictive Dialer started for campaign: ' . $this->campaign->campaign_name);
+        Log::info('🎯 Predictive Dialer started for campaign: ' . $this->campaign->campaign_name, [
+            'campaign_id' => $this->campaign->id
+        ]);
 
         try {
+            // Check if campaign is still active
+            $campaign = $this->campaign->fresh();
+            if (!$campaign || !$campaign->is_active) {
+                Log::info('Campaign is no longer active, stopping dialer', [
+                    'campaign_id' => $this->campaign->id
+                ]);
+                return;
+            }
+
             $this->amiService = new AsteriskAMIService();
             
             if (!$this->amiService->connect()) {
@@ -47,7 +58,10 @@ class PredictiveDialerJob implements ShouldQueue
             $this->runDialingLoop();
 
         } catch (Exception $e) {
-            Log::error('❌ Predictive Dialer Job failed: ' . $e->getMessage());
+            Log::error('❌ Predictive Dialer Job failed: ' . $e->getMessage(), [
+                'campaign_id' => $this->campaign->id,
+                'exception' => $e
+            ]);
             $this->campaign->update(['status' => 'stopped', 'is_active' => false]);
         } finally {
             if ($this->amiService) {
@@ -63,14 +77,27 @@ class PredictiveDialerJob implements ShouldQueue
         $maxIterations = 1000; // Prevent infinite loops
         $iteration = 0;
 
-        while ($this->campaign->fresh()->is_active && $iteration < $maxIterations) {
+        while ($iteration < $maxIterations) {
             $iteration++;
+            
+            // Check if campaign is still active
+            $campaign = $this->campaign->fresh();
+            if (!$campaign || !$campaign->is_active) {
+                Log::info('Campaign stopped, exiting dialing loop', [
+                    'campaign_id' => $this->campaign->id,
+                    'iteration' => $iteration
+                ]);
+                break;
+            }
             
             try {
                 $this->processDialing();
                 sleep(5); // Wait 5 seconds before next iteration
             } catch (Exception $e) {
-                Log::error('❌ Error in dialing loop: ' . $e->getMessage());
+                Log::error('❌ Error in dialing loop: ' . $e->getMessage(), [
+                    'campaign_id' => $this->campaign->id,
+                    'iteration' => $iteration
+                ]);
                 sleep(10); // Wait longer on error
             }
         }
@@ -82,7 +109,7 @@ class PredictiveDialerJob implements ShouldQueue
         $availableAgents = Agent::where('status', 'idle')->get();
         
         if ($availableAgents->isEmpty()) {
-            Log::info('⏳ No available agents for campaign: ' . $this->campaign->campaign_name);
+            Log::debug('⏳ No available agents for campaign: ' . $this->campaign->campaign_name);
             return;
         }
 
@@ -97,6 +124,12 @@ class PredictiveDialerJob implements ShouldQueue
             $this->campaign->update(['status' => 'completed', 'is_active' => false]);
             return;
         }
+
+        Log::info('Processing dialing batch', [
+            'campaign_id' => $this->campaign->id,
+            'available_agents' => $availableAgents->count(),
+            'uncalled_numbers' => $uncalledNasabah->count()
+        ]);
 
         foreach ($uncalledNasabah as $nasabah) {
             $agent = $availableAgents->where('status', 'idle')->first();
@@ -143,10 +176,19 @@ class PredictiveDialerJob implements ShouldQueue
             // Broadcast to agent
             event(new CallRouted($agent, $nasabah));
 
-            Log::info("📞 Call initiated: Agent {$agent->name} -> {$nasabah->phone}");
+            Log::info("📞 Call initiated", [
+                'call_id' => $call->id,
+                'agent' => $agent->name,
+                'customer_phone' => $nasabah->phone,
+                'campaign_id' => $this->campaign->id
+            ]);
 
         } catch (Exception $e) {
-            Log::error("❌ Failed to initiate call: " . $e->getMessage());
+            Log::error("❌ Failed to initiate call: " . $e->getMessage(), [
+                'nasabah_id' => $nasabah->id,
+                'agent_id' => $agent->id,
+                'exception' => $e
+            ]);
             
             // Cleanup on failure
             $nasabah->update(['is_called' => false]);
@@ -184,17 +226,26 @@ class PredictiveDialerJob implements ShouldQueue
             );
 
             if ($success) {
-                Log::info("📞 Asterisk call initiated successfully for Call ID: {$call->id}");
+                Log::info("📞 Asterisk call initiated successfully", [
+                    'call_id' => $call->id,
+                    'customer_phone' => $nasabah->phone,
+                    'agent_extension' => $agentExtension
+                ]);
                 
                 // Schedule call monitoring
                 $this->scheduleCallMonitoring($call);
             } else {
-                Log::error("❌ Failed to initiate Asterisk call for Call ID: {$call->id}");
+                Log::error("❌ Failed to initiate Asterisk call", [
+                    'call_id' => $call->id
+                ]);
                 $this->handleCallFailure($call);
             }
 
         } catch (Exception $e) {
-            Log::error("❌ Asterisk call error: " . $e->getMessage());
+            Log::error("❌ Asterisk call error: " . $e->getMessage(), [
+                'call_id' => $call->id,
+                'exception' => $e
+            ]);
             $this->handleCallFailure($call);
         }
     }
@@ -272,7 +323,11 @@ class PredictiveDialerJob implements ShouldQueue
                 $call->agent->update(['status' => 'idle']);
             }
 
-            Log::info("📞 Call finalized: {$call->id} - Status: {$status} - Duration: {$duration}s");
+            Log::info("📞 Call finalized", [
+                'call_id' => $call->id,
+                'status' => $status,
+                'duration' => $duration
+            ]);
 
         } catch (Exception $e) {
             Log::error("❌ Error finalizing call: " . $e->getMessage());
@@ -294,7 +349,9 @@ class PredictiveDialerJob implements ShouldQueue
                 $call->agent->update(['status' => 'idle']);
             }
 
-            Log::info("📞 Call failed: {$call->id}");
+            Log::info("📞 Call failed", [
+                'call_id' => $call->id
+            ]);
 
         } catch (Exception $e) {
             Log::error("❌ Error handling call failure: " . $e->getMessage());
@@ -303,7 +360,10 @@ class PredictiveDialerJob implements ShouldQueue
 
     public function failed(Exception $exception): void
     {
-        Log::error('❌ PredictiveDialerJob failed: ' . $exception->getMessage());
+        Log::error('❌ PredictiveDialerJob failed: ' . $exception->getMessage(), [
+            'campaign_id' => $this->campaign->id,
+            'exception' => $exception
+        ]);
         
         // Update campaign status on job failure
         $this->campaign->update([
