@@ -16,19 +16,35 @@ configureEcho({
     enabledTransports: ['ws'],
 });
 
+// Ensure CSRF token is available for all requests
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 if (csrfToken) {
-  const originalFetch = window.fetch;
-  window.fetch = (input, init = {}) => {
-    const headers = new Headers(init.headers || {});
-    headers.set('X-CSRF-TOKEN', csrfToken);
+    // Set up axios defaults if using axios
+    if (window.axios) {
+        window.axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
+        window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+        window.axios.defaults.withCredentials = true;
+    }
 
-    return originalFetch(input, {
-      ...init,
-      headers,
-      credentials: 'include', // ⬅️ WAJIB untuk session-based auth
-    });
-  };
+    // Override fetch for manual requests
+    const originalFetch = window.fetch;
+    window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        
+        if (!headers.has('X-CSRF-TOKEN')) {
+            headers.set('X-CSRF-TOKEN', csrfToken);
+        }
+        
+        if (!headers.has('X-Requested-With')) {
+            headers.set('X-Requested-With', 'XMLHttpRequest');
+        }
+
+        return originalFetch(input, {
+            ...init,
+            headers,
+            credentials: 'include', // ⬅️ WAJIB untuk session-based auth
+        });
+    };
 }
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';

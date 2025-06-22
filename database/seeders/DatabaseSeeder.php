@@ -28,5 +28,6 @@ class DatabaseSeeder extends Seeder
             "role" => UserRole::SuperAdmin,
             'password' => Hash::make("haydar123"), 
         ]);
+
     }
 }
