@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use Exception;
 
 class AsteriskAMIService
 {
@@ -11,68 +12,102 @@ class AsteriskAMIService
     private $port;
     private $username;
     private $secret;
+    private $timeout;
     private $connected = false;
+    private $actionId = 0;
 
     public function __construct()
     {
-        $this->host = config('asterisk.ami.host', '192.168.18.66'); // IP laptop PBX
-        $this->port = config('asterisk.ami.port', 5038);
-        $this->username = config('asterisk.ami.username', 'admin');
-        $this->secret = config('asterisk.ami.secret', 'amp111');
+        $this->host = config('asterisk.ami.host');
+        $this->port = config('asterisk.ami.port');
+        $this->username = config('asterisk.ami.username');
+        $this->secret = config('asterisk.ami.secret');
+        $this->timeout = config('asterisk.ami.timeout');
     }
 
     public function connect(): bool
     {
         try {
+            Log::info('🔌 Attempting AMI connection', [
+                'host' => $this->host,
+                'port' => $this->port,
+                'username' => $this->username
+            ]);
+
             $this->socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
             
             if (!$this->socket) {
-                Log::error('AMI: Failed to create socket');
+                $error = socket_strerror(socket_last_error());
+                Log::error('❌ Failed to create socket', ['error' => $error]);
                 return false;
             }
 
-            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 10, 'usec' => 0]);
-            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => 10, 'usec' => 0]);
+            // Set socket options
+            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, [
+                'sec' => config('asterisk.ami.read_timeout', 10), 
+                'usec' => 0
+            ]);
+            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, [
+                'sec' => config('asterisk.ami.connect_timeout', 5), 
+                'usec' => 0
+            ]);
 
             $result = socket_connect($this->socket, $this->host, $this->port);
             
             if (!$result) {
-                Log::error('AMI: Failed to connect to ' . $this->host . ':' . $this->port);
+                $error = socket_strerror(socket_last_error($this->socket));
+                Log::error('❌ Failed to connect to Asterisk AMI', [
+                    'host' => $this->host,
+                    'port' => $this->port,
+                    'error' => $error
+                ]);
                 return false;
             }
 
             // Read welcome message
-            $this->readResponse();
+            $welcome = $this->readResponse();
+            Log::debug('📨 AMI Welcome message', ['message' => $welcome]);
 
             // Login
             if ($this->login()) {
                 $this->connected = true;
-                Log::info('AMI: Successfully connected and logged in');
+                Log::info('✅ AMI Successfully connected and logged in');
                 return true;
             }
 
+            Log::error('❌ AMI Login failed');
             return false;
-        } catch (\Exception $e) {
-            Log::error('AMI Connection Error: ' . $e->getMessage());
+
+        } catch (Exception $e) {
+            Log::error('❌ AMI Connection Exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
 
     private function login(): bool
     {
+        $actionId = $this->getNextActionId();
+        
         $loginAction = "Action: Login\r\n";
+        $loginAction .= "ActionID: {$actionId}\r\n";
         $loginAction .= "Username: {$this->username}\r\n";
         $loginAction .= "Secret: {$this->secret}\r\n";
         $loginAction .= "\r\n";
 
-        socket_write($this->socket, $loginAction, strlen($loginAction));
+        if (!$this->sendCommand($loginAction)) {
+            return false;
+        }
         
         $response = $this->readResponse();
+        Log::debug('🔐 AMI Login response', ['response' => $response]);
         
         return strpos($response, 'Response: Success') !== false;
     }
 
-    public function originateCall(string $channel, string $context, string $extension, string $priority = '1', array $variables = []): bool
+    public function originateCall(string $channel, string $context, string $extension, string $priority = '1', array $variables = [], int $timeout = 30000): bool
     {
         if (!$this->connected) {
             if (!$this->connect()) {
@@ -80,7 +115,7 @@ class AsteriskAMIService
             }
         }
 
-        $actionId = uniqid('call_');
+        $actionId = $this->getNextActionId();
         
         $originateAction = "Action: Originate\r\n";
         $originateAction .= "ActionID: {$actionId}\r\n";
@@ -88,8 +123,9 @@ class AsteriskAMIService
         $originateAction .= "Context: {$context}\r\n";
         $originateAction .= "Exten: {$extension}\r\n";
         $originateAction .= "Priority: {$priority}\r\n";
-        $originateAction .= "Timeout: 30000\r\n";
+        $originateAction .= "Timeout: {$timeout}\r\n";
         $originateAction .= "CallerID: Predictive Dialer <1000>\r\n";
+        $originateAction .= "Async: true\r\n";
         
         // Add custom variables
         foreach ($variables as $key => $value) {
@@ -98,11 +134,17 @@ class AsteriskAMIService
         
         $originateAction .= "\r\n";
 
-        socket_write($this->socket, $originateAction, strlen($originateAction));
+        if (!$this->sendCommand($originateAction)) {
+            return false;
+        }
         
         $response = $this->readResponse();
         
-        Log::info('AMI Originate Response: ' . $response);
+        Log::info('📞 AMI Originate Response', [
+            'action_id' => $actionId,
+            'channel' => $channel,
+            'response' => $response
+        ]);
         
         return strpos($response, 'Response: Success') !== false;
     }
@@ -113,13 +155,24 @@ class AsteriskAMIService
             return false;
         }
 
+        $actionId = $this->getNextActionId();
+
         $hangupAction = "Action: Hangup\r\n";
+        $hangupAction .= "ActionID: {$actionId}\r\n";
         $hangupAction .= "Channel: {$channel}\r\n";
         $hangupAction .= "\r\n";
 
-        socket_write($this->socket, $hangupAction, strlen($hangupAction));
+        if (!$this->sendCommand($hangupAction)) {
+            return false;
+        }
         
         $response = $this->readResponse();
+        
+        Log::info('📴 AMI Hangup Response', [
+            'action_id' => $actionId,
+            'channel' => $channel,
+            'response' => $response
+        ]);
         
         return strpos($response, 'Response: Success') !== false;
     }
@@ -130,11 +183,16 @@ class AsteriskAMIService
             return [];
         }
 
+        $actionId = $this->getNextActionId();
+
         $statusAction = "Action: Status\r\n";
+        $statusAction .= "ActionID: {$actionId}\r\n";
         $statusAction .= "Channel: {$channel}\r\n";
         $statusAction .= "\r\n";
 
-        socket_write($this->socket, $statusAction, strlen($statusAction));
+        if (!$this->sendCommand($statusAction)) {
+            return [];
+        }
         
         $response = $this->readResponse();
         
@@ -147,24 +205,134 @@ class AsteriskAMIService
             return [];
         }
 
-        $statusAction = "Action: Status\r\n\r\n";
+        $actionId = $this->getNextActionId();
 
-        socket_write($this->socket, $statusAction, strlen($statusAction));
+        $statusAction = "Action: Status\r\n";
+        $statusAction .= "ActionID: {$actionId}\r\n";
+        $statusAction .= "\r\n";
+
+        if (!$this->sendCommand($statusAction)) {
+            return [];
+        }
         
         $response = $this->readResponse();
         
         return $this->parseMultipleEvents($response);
     }
 
+    public function getAgentStatus(): array
+    {
+        if (!$this->connected) {
+            return [];
+        }
+
+        $actionId = $this->getNextActionId();
+
+        $agentAction = "Action: Agents\r\n";
+        $agentAction .= "ActionID: {$actionId}\r\n";
+        $agentAction .= "\r\n";
+
+        if (!$this->sendCommand($agentAction)) {
+            return [];
+        }
+        
+        $response = $this->readResponse();
+        
+        return $this->parseMultipleEvents($response);
+    }
+
+    public function queueAdd(string $queue, string $interface, int $penalty = 0): bool
+    {
+        if (!$this->connected) {
+            return false;
+        }
+
+        $actionId = $this->getNextActionId();
+
+        $queueAction = "Action: QueueAdd\r\n";
+        $queueAction .= "ActionID: {$actionId}\r\n";
+        $queueAction .= "Queue: {$queue}\r\n";
+        $queueAction .= "Interface: {$interface}\r\n";
+        $queueAction .= "Penalty: {$penalty}\r\n";
+        $queueAction .= "\r\n";
+
+        if (!$this->sendCommand($queueAction)) {
+            return false;
+        }
+        
+        $response = $this->readResponse();
+        
+        return strpos($response, 'Response: Success') !== false;
+    }
+
+    public function queueRemove(string $queue, string $interface): bool
+    {
+        if (!$this->connected) {
+            return false;
+        }
+
+        $actionId = $this->getNextActionId();
+
+        $queueAction = "Action: QueueRemove\r\n";
+        $queueAction .= "ActionID: {$actionId}\r\n";
+        $queueAction .= "Queue: {$queue}\r\n";
+        $queueAction .= "Interface: {$interface}\r\n";
+        $queueAction .= "\r\n";
+
+        if (!$this->sendCommand($queueAction)) {
+            return false;
+        }
+        
+        $response = $this->readResponse();
+        
+        return strpos($response, 'Response: Success') !== false;
+    }
+
+    private function sendCommand(string $command): bool
+    {
+        if (!$this->socket) {
+            Log::error('❌ No socket connection available');
+            return false;
+        }
+
+        $bytes = socket_write($this->socket, $command, strlen($command));
+        
+        if ($bytes === false) {
+            $error = socket_strerror(socket_last_error($this->socket));
+            Log::error('❌ Failed to send AMI command', [
+                'command' => trim($command),
+                'error' => $error
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
     private function readResponse(): string
     {
+        if (!$this->socket) {
+            return '';
+        }
+
         $response = '';
         $buffer = '';
+        $maxAttempts = 100;
+        $attempts = 0;
         
-        while (true) {
+        while ($attempts < $maxAttempts) {
+            $attempts++;
+            
             $data = socket_read($this->socket, 1024);
             
-            if ($data === false || $data === '') {
+            if ($data === false) {
+                $error = socket_strerror(socket_last_error($this->socket));
+                Log::warning('⚠️ Socket read error', ['error' => $error, 'attempts' => $attempts]);
+                break;
+            }
+            
+            if ($data === '') {
+                // No more data
                 break;
             }
             
@@ -220,14 +388,24 @@ class AsteriskAMIService
         return $events;
     }
 
+    private function getNextActionId(): string
+    {
+        return 'action_' . (++$this->actionId) . '_' . time();
+    }
+
+    public function isConnected(): bool
+    {
+        return $this->connected;
+    }
+
     public function disconnect(): void
     {
         if ($this->socket && $this->connected) {
             $logoffAction = "Action: Logoff\r\n\r\n";
-            socket_write($this->socket, $logoffAction, strlen($logoffAction));
+            $this->sendCommand($logoffAction);
             socket_close($this->socket);
             $this->connected = false;
-            Log::info('AMI: Disconnected');
+            Log::info('🔌 AMI Disconnected');
         }
     }
 
