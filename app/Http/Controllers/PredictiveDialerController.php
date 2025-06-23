@@ -15,6 +15,32 @@ class PredictiveDialerController extends Controller
     public function start(Campaign $campaign): JsonResponse
     {
         try {
+            // Validate user permissions
+            if (!auth()->check()) {
+                Log::warning('Unauthorized access attempt to start campaign', [
+                    'campaign_id' => $campaign->id,
+                    'ip' => request()->ip()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            // Check user role permissions
+            $user = auth()->user();
+            if (!in_array($user->role, ['SuperAdmin', 'Admin'])) {
+                Log::warning('Insufficient permissions to start campaign', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'campaign_id' => $campaign->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient permissions'
+                ], 403);
+            }
+
             if ($campaign->status === 'running') {
                 return response()->json([
                     'success' => false,
@@ -53,7 +79,11 @@ class PredictiveDialerController extends Controller
             // Broadcast status change
             event(new CampaignStatusChanged($campaign));
 
-            Log::info("🚀 Predictive dialer started for campaign: {$campaign->campaign_name}");
+            Log::info("🚀 Predictive dialer started for campaign: {$campaign->campaign_name}", [
+                'campaign_id' => $campaign->id,
+                'user_id' => $user->id,
+                'remaining_numbers' => $remainingNumbers
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -62,7 +92,10 @@ class PredictiveDialerController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error("❌ Failed to start campaign {$campaign->id}: " . $e->getMessage());
+            Log::error("❌ Failed to start campaign {$campaign->id}: " . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => auth()->id()
+            ]);
             
             return response()->json([
                 'success' => false,
@@ -74,6 +107,21 @@ class PredictiveDialerController extends Controller
     public function stop(Campaign $campaign): JsonResponse
     {
         try {
+            if (!auth()->check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            $user = auth()->user();
+            if (!in_array($user->role, ['SuperAdmin', 'Admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient permissions'
+                ], 403);
+            }
+
             $campaign->update([
                 'status' => 'stopped',
                 'is_active' => false,
@@ -83,7 +131,10 @@ class PredictiveDialerController extends Controller
             // Broadcast status change
             event(new CampaignStatusChanged($campaign));
 
-            Log::info("🛑 Predictive dialer stopped for campaign: {$campaign->campaign_name}");
+            Log::info("🛑 Predictive dialer stopped for campaign: {$campaign->campaign_name}", [
+                'campaign_id' => $campaign->id,
+                'user_id' => $user->id
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -104,6 +155,21 @@ class PredictiveDialerController extends Controller
     public function pause(Campaign $campaign): JsonResponse
     {
         try {
+            if (!auth()->check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            $user = auth()->user();
+            if (!in_array($user->role, ['SuperAdmin', 'Admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient permissions'
+                ], 403);
+            }
+
             if ($campaign->status !== 'running') {
                 return response()->json([
                     'success' => false,
@@ -140,6 +206,21 @@ class PredictiveDialerController extends Controller
     public function resume(Campaign $campaign): JsonResponse
     {
         try {
+            if (!auth()->check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            $user = auth()->user();
+            if (!in_array($user->role, ['SuperAdmin', 'Admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient permissions'
+                ], 403);
+            }
+
             if ($campaign->status !== 'paused') {
                 return response()->json([
                     'success' => false,
@@ -179,6 +260,13 @@ class PredictiveDialerController extends Controller
     public function status(Campaign $campaign): JsonResponse
     {
         try {
+            if (!auth()->check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
             $stats = [
                 'total_numbers' => $campaign->nasbahs()->count(),
                 'called_numbers' => $campaign->nasbahs()->where('is_called', true)->count(),
