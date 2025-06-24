@@ -8,11 +8,14 @@ use App\Imports\AkulakuImport;
 use App\Jobs\ProcessAkulakuImport;
 use App\Models\Campaign;
 use App\Models\Nasbah;
+use App\Exports\CallReportExport;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class CampaignController extends Controller
 {
@@ -44,6 +47,70 @@ class CampaignController extends Controller
             'campaign' => $campaign,
             'stats' => $stats,
         ]);
+    }
+
+    public function nasbahs(Campaign $campaign, Request $request)
+    {
+        $query = $campaign->nasbahs();
+
+        if ($request->search) {
+            $query->where(function($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->search . '%')
+                  ->orWhere('phone', 'like', '%' . $request->search . '%');
+            });
+        }
+
+        $nasbahs = $query->orderBy('created_at', 'desc')->paginate(50);
+
+        return Inertia::render('campaign/nasbahs', [
+            'campaign' => $campaign,
+            'nasbahs' => $nasbahs,
+        ]);
+    }
+
+    public function destroyNasbah(Campaign $campaign, Nasbah $nasbah)
+    {
+        if ($nasbah->campaign_id !== $campaign->id) {
+            return back()->withErrors(['error' => 'Customer data not found in this campaign.']);
+        }
+
+        $nasbah->delete();
+
+        return back()->with('success', 'Customer data deleted successfully.');
+    }
+
+    public function exportNasbahs(Campaign $campaign)
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        $sheet->setTitle('Customer Data');
+        
+        // Headers
+        $headers = ['Name', 'Phone', 'Outstanding', 'Penalty', 'Status', 'Added Date'];
+        $sheet->fromArray($headers, null, 'A1');
+        
+        // Data
+        $nasbahs = $campaign->nasbahs()->get();
+        $row = 2;
+        
+        foreach ($nasbahs as $nasbah) {
+            $sheet->setCellValue('A' . $row, $nasbah->name);
+            $sheet->setCellValue('B' . $row, $nasbah->phone);
+            $sheet->setCellValue('C' . $row, $nasbah->outstanding);
+            $sheet->setCellValue('D' . $row, $nasbah->denda);
+            $sheet->setCellValue('E' . $row, $nasbah->is_called ? 'Called' : 'Not Called');
+            $sheet->setCellValue('F' . $row, $nasbah->created_at->format('Y-m-d H:i:s'));
+            $row++;
+        }
+        
+        $writer = new Xlsx($spreadsheet);
+        $filename = 'customer_data_' . Str::slug($campaign->campaign_name) . '_' . date('Y-m-d') . '.xlsx';
+        
+        $temp = tempnam(sys_get_temp_dir(), 'export');
+        $writer->save($temp);
+        
+        return response()->download($temp, $filename)->deleteFileAfterSend(true);
     }
 
     public function showUploadForm()
@@ -85,5 +152,31 @@ class CampaignController extends Controller
         }
 
         return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully and is being processed.');
+    }
+
+    public function destroy(Campaign $campaign)
+    {
+        try {
+            DB::transaction(function () use ($campaign) {
+                // Delete related calls first
+                $campaign->calls()->delete();
+                
+                // Delete related nasbahs
+                $campaign->nasbahs()->delete();
+                
+                // Delete the campaign file if exists
+                if ($campaign->file_path && Storage::exists($campaign->file_path)) {
+                    Storage::delete($campaign->file_path);
+                }
+                
+                // Delete the campaign
+                $campaign->delete();
+            });
+
+            return redirect()->route('campaign')->with('success', 'Campaign deleted successfully.');
+        } catch (\Exception $e) {
+            Log::error('Failed to delete campaign: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to delete campaign. Please try again.']);
+        }
     }
 }

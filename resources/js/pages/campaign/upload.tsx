@@ -2,6 +2,8 @@ import AppLayout from '@/layouts/app-layout';
 import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Download } from 'lucide-react';
 import useCampaignImportListener from '@/hooks/useCampaignImportListener';
 
 export default function UploadCampaign() {
@@ -13,40 +15,44 @@ export default function UploadCampaign() {
   useCampaignImportListener((e) => {
     console.log('📢 Campaign import selesai:', e);
     alert(`✅ Import selesai untuk Campaign ID: ${e.campaignId}`);
-    router.visit('/campaign'); // optional: redirect ke halaman campaign
+    router.visit('/campaign');
   });
+
+  const downloadTemplate = () => {
+    window.open(`/campaign/template/download?product_type=${productType}`, '_blank');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!file) {
-    alert('Mohon upload file Excel terlebih dahulu.');
-    return;
-  }
-
-  setIsSubmitting(true);
-  
-  const formData = new FormData();
-  formData.append('campaign_name', campaignName);
-  formData.append('product_type', productType);
-  formData.append('file', file);
-
-  router.post(route('campaign.upload'), formData, {
-    forceFormData: true,
-    preserveScroll: true, // Penting untuk InertiaJS
-    onError: (errors) => {
-      setIsSubmitting(false);
-      if (errors.file) {
-        alert(`Upload gagal: ${errors.file}`);
-      }
-    },
-    onSuccess: () => {
-      setIsSubmitting(false);
-      alert("Upload berhasil!");
-      router.visit('/campaign');
+    if (!file) {
+      alert('Mohon upload file Excel terlebih dahulu.');
+      return;
     }
-  });
-};
+
+    setIsSubmitting(true);
+    
+    const formData = new FormData();
+    formData.append('campaign_name', campaignName);
+    formData.append('product_type', productType);
+    formData.append('file', file);
+
+    router.post(route('campaign.upload'), formData, {
+      forceFormData: true,
+      preserveScroll: true,
+      onError: (errors) => {
+        setIsSubmitting(false);
+        if (errors.file) {
+          alert(`Upload gagal: ${errors.file}`);
+        }
+      },
+      onSuccess: () => {
+        setIsSubmitting(false);
+        alert("Upload berhasil!");
+        router.visit('/campaign');
+      }
+    });
+  };
 
   return (
     <AppLayout breadcrumbs={[{ title: 'Campaign', href: '/campaign' }]}>
@@ -71,46 +77,58 @@ export default function UploadCampaign() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Product Type</label>
-              <select
-                value={productType}
-                onChange={(e) => setProductType(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring focus:ring-indigo-200 focus:outline-none"
-              >
-                <option value="akulaku">Akulaku</option>
-                <option value="BNI">BNI</option>
-                <option value="BRI">BRI</option>
-                <option value="CashWagon">CashWagon</option>
-                <option value="MauCash">MauCash</option>
-                <option value="KoinWorks">KoinWorks</option>
-                <option value="KP+">KP+</option>
-                <option value="PinjamYuk">PinjamYuk</option>
-                <option value="UangMe">UangMe</option>
-              </select>
+              <Select value={productType} onValueChange={setProductType}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select product type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="akulaku">Akulaku</SelectItem>
+                  <SelectItem value="BNI">BNI</SelectItem>
+                  <SelectItem value="BRI">BRI</SelectItem>
+                  <SelectItem value="CashWagon">CashWagon</SelectItem>
+                  <SelectItem value="MauCash">MauCash</SelectItem>
+                  <SelectItem value="KoinWorks">KoinWorks</SelectItem>
+                  <SelectItem value="KP+">KP+</SelectItem>
+                  <SelectItem value="PinjamYuk">PinjamYuk</SelectItem>
+                  <SelectItem value="UangMe">UangMe</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Upload File</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">Upload File</label>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={downloadTemplate}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download Template
+                </Button>
+              </div>
               <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={(e) => {
-                        if (e.target.files?.[0]) {
-                        setFile(e.target.files[0]);
-                        }
-                    }}
-                    className="block w-full text-sm text-gray-700
-                                file:mr-4 file:py-2 file:px-4
-                                file:rounded-lg file:border-0
-                                file:text-sm file:font-semibold
-                                file:bg-indigo-50 file:text-indigo-700
-                                hover:file:bg-indigo-100"
-                        required
-                    />
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    setFile(e.target.files[0]);
+                  }
+                }}
+                className="block w-full text-sm text-gray-700
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-lg file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-indigo-50 file:text-indigo-700
+                          hover:file:bg-indigo-100"
+                required
+              />
               <p className="text-xs text-gray-500 mt-1">Format yang didukung: .csv, .xlsx, .xls</p>
             </div>
 
             <div className="pt-4 text-right">
-             <Button type="submit" className="px-6 py-2" disabled={isSubmitting}>
+              <Button type="submit" className="px-6 py-2" disabled={isSubmitting}>
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

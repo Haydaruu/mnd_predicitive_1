@@ -1,9 +1,10 @@
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import { CampaignControls } from '@/components/campaign-controls';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, usePage, router } from '@inertiajs/react';
 import { type BreadcrumbItem } from '@/types';
 import { useState, useEffect } from 'react';
+import { Trash2, Users } from 'lucide-react';
 import useCampaignStatusListener from '@/hooks/useCampaignStatusListener';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -61,6 +62,20 @@ export default function CampaignIndex() {
                     : campaign
             )
         }));
+    };
+
+    const handleDelete = (campaignId: number) => {
+        if (confirm('Are you sure you want to delete this campaign? This action cannot be undone and will delete all associated data.')) {
+            router.delete(`/campaign/${campaignId}`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setCampaigns(prev => ({
+                        ...prev,
+                        data: prev.data.filter(campaign => campaign.id !== campaignId)
+                    }));
+                },
+            });
+        }
     };
 
     return (
@@ -126,11 +141,24 @@ export default function CampaignIndex() {
                                                         View
                                                     </Button>
                                                 </Link>
+                                                <Link href={`/campaign/${campaign.id}/nasbahs`}>
+                                                    <Button size="sm" variant="outline">
+                                                        <Users className="h-4 w-4 mr-1" />
+                                                        Customers
+                                                    </Button>
+                                                </Link>
                                                 <Link href={`/reports/campaign/${campaign.id}`}>
                                                     <Button size="sm" variant="outline">
                                                         Reports
                                                     </Button>
                                                 </Link>
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="destructive"
+                                                    onClick={() => handleDelete(campaign.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
                                             </div>
                                         </td>
                                     </tr>
