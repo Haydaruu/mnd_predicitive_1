@@ -1,4 +1,4 @@
-import { useEcho } from '@laravel/echo-react';
+import { useEchoPublic } from '@laravel/echo-react';
 import { useEffect } from 'react';
 
 interface CampaignImportEvent {
@@ -6,5 +6,5 @@ interface CampaignImportEvent {
 }
 
 export default function useCampaignImportListener(callback: (event: CampaignImportEvent) => void) {
-    useEcho('campaign-import', 'import.finished', callback);
+    useEchoPublic('campaign-import', 'import.finished', callback);
 }

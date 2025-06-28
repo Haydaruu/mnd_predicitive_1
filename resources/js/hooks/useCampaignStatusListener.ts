@@ -1,4 +1,4 @@
-import { useEcho } from '@laravel/echo-react';
+import { useEchoPublic } from '@laravel/echo-react';
 import { useEffect } from 'react';
 
 interface CampaignStatusEvent {
@@ -11,5 +11,5 @@ interface CampaignStatusEvent {
 }
 
 export default function useCampaignStatusListener(callback: (event: CampaignStatusEvent) => void) {
-    useEcho('campaign-status', 'status.changed', callback);
+    useEchoPublic('campaign-status', 'status.changed', callback);
 }
