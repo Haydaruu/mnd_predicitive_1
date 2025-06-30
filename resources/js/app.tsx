@@ -16,22 +16,39 @@ configureEcho({
     enabledTransports: ['ws'],
 });
 
+// Initialize CSRF protection
+const initializeCSRF = async () => {
+    try {
+        // Get CSRF cookie first
+        await fetch('http://127.0.0.1:8000/sanctum/csrf-cookie', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+        });
+        console.log('✅ CSRF cookie initialized');
+    } catch (error) {
+        console.error('❌ Failed to initialize CSRF:', error);
+    }
+};
+
+// Initialize CSRF on app load
+initializeCSRF();
+
 // Ensure CSRF token is available for all requests
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-if (csrfToken) {
-    // Set up axios defaults if using axios
-    if (window.axios) {
-        window.axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
-        window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-        window.axios.defaults.withCredentials = true;
-    }
 
-    // Override fetch for manual requests
-    const originalFetch = window.fetch;
-    window.fetch = (input, init = {}) => {
-        const headers = new Headers(init.headers || {});
-        
-        if (!headers.has('X-CSRF-TOKEN')) {
+// Override fetch for manual requests
+const originalFetch = window.fetch;
+window.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    const headers = new Headers(init.headers || {});
+    
+    // Add CSRF token for same-origin requests
+    if (url.startsWith('/') || url.includes('127.0.0.1:8000') || url.includes('localhost:8000')) {
+        if (csrfToken && !headers.has('X-CSRF-TOKEN')) {
             headers.set('X-CSRF-TOKEN', csrfToken);
         }
         
@@ -39,13 +56,17 @@ if (csrfToken) {
             headers.set('X-Requested-With', 'XMLHttpRequest');
         }
 
-        return originalFetch(input, {
-            ...init,
-            headers,
-            credentials: 'include', // ⬅️ WAJIB untuk session-based auth
-        });
-    };
-}
+        if (!headers.has('Accept')) {
+            headers.set('Accept', 'application/json');
+        }
+    }
+
+    return originalFetch(input, {
+        ...init,
+        headers,
+        credentials: 'include', // Always include credentials for same-origin
+    });
+};
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

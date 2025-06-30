@@ -1,7 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
 import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler } from 'react';
-import { useEffect } from 'react';
 
 import InputError from '@/components/input-error';
 import TextLink from '@/components/text-link';
@@ -28,13 +27,6 @@ export default function Login({ status, canResetPassword }: LoginProps) {
         password: '',
         remember: false,
     });
-    useEffect(() => {
-        fetch('http://127.0.0.1:8000/sanctum/csrf-cookie', {
-            credentials: 'include', // penting buat bawa cookie
-        })
-        .then(() => console.log('CSRF cookie loaded for login'))
-        .catch(console.error);
-    }, []);
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();

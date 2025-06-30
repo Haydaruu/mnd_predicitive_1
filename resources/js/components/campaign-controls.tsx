@@ -38,7 +38,7 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                credentials: 'include', // Important for session-based auth
+                credentials: 'include',
             });
 
             if (!response.ok) {
