@@ -23,18 +23,11 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
         setIsLoading(true);
         
         try {
-            // Get CSRF token from meta tag
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            
-            if (!csrfToken) {
-                throw new Error('CSRF token not found');
-            }
-
+            // Use relative URL for same-origin request
             const response = await fetch(`/api/campaigns/${campaign.id}/${action}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },

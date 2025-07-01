@@ -16,19 +16,25 @@ configureEcho({
     enabledTransports: ['ws'],
 });
 
-// Initialize CSRF protection
+// Initialize CSRF protection with proper credentials
 const initializeCSRF = async () => {
     try {
-        // Get CSRF cookie first
-        await fetch('http://127.0.0.1:8000/sanctum/csrf-cookie', {
+        // Get CSRF cookie first with proper credentials
+        const response = await fetch('/sanctum/csrf-cookie', {
             method: 'GET',
             credentials: 'include',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
             },
         });
-        console.log('✅ CSRF cookie initialized');
+        
+        if (response.ok) {
+            console.log('✅ CSRF cookie initialized successfully');
+        } else {
+            console.warn('⚠️ CSRF cookie response:', response.status);
+        }
     } catch (error) {
         console.error('❌ Failed to initialize CSRF:', error);
     }
@@ -37,8 +43,23 @@ const initializeCSRF = async () => {
 // Initialize CSRF on app load
 initializeCSRF();
 
-// Ensure CSRF token is available for all requests
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+// Get CSRF token from meta tag or cookie
+const getCSRFToken = () => {
+    // Try meta tag first
+    const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (metaToken) return metaToken;
+    
+    // Try XSRF cookie
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'XSRF-TOKEN') {
+            return decodeURIComponent(value);
+        }
+    }
+    
+    return null;
+};
 
 // Override fetch for manual requests
 const originalFetch = window.fetch;
@@ -48,7 +69,10 @@ window.fetch = (input, init = {}) => {
     
     // Add CSRF token for same-origin requests
     if (url.startsWith('/') || url.includes('127.0.0.1:8000') || url.includes('localhost:8000')) {
-        if (csrfToken && !headers.has('X-CSRF-TOKEN')) {
+        const csrfToken = getCSRFToken();
+        
+        if (csrfToken) {
+            headers.set('X-XSRF-TOKEN', csrfToken);
             headers.set('X-CSRF-TOKEN', csrfToken);
         }
         
