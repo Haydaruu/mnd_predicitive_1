@@ -23,7 +23,9 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
         setIsLoading(true);
         
         try {
-            // Use relative URL for same-origin request
+            console.log(`🎯 Starting ${action} action for campaign ${campaign.id}`);
+            
+            // Use fetch with automatic CSRF handling
             const response = await fetch(`/api/campaigns/${campaign.id}/${action}`, {
                 method: 'POST',
                 headers: {
@@ -34,6 +36,8 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
                 credentials: 'same-origin',
             });
 
+            console.log(`📡 Response status: ${response.status}`);
+
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Response error:', response.status, errorText);
@@ -41,6 +45,7 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
             }
 
             const data = await response.json();
+            console.log('📊 Response data:', data);
 
             if (data.success) {
                 onStatusChange?.(data.campaign);
