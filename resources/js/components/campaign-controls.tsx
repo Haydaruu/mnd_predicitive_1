@@ -31,7 +31,7 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                credentials: 'include',
+                credentials: 'same-origin',
             });
 
             if (!response.ok) {

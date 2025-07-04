@@ -17,6 +17,11 @@ class CorsMiddleware
             'http://127.0.0.1:5173',
         ];
         
+        // For same-origin requests, don't add CORS headers
+        if (!$origin || $origin === $request->getSchemeAndHttpHost()) {
+            return $next($request);
+        }
+        
         if ($request->getMethod() === "OPTIONS") {
             return response('', 204)
                 ->header('Access-Control-Allow-Origin', in_array($origin, $allowedOrigins) ? $origin : 'http://localhost:8000')

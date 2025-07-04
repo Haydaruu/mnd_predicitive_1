@@ -22,7 +22,7 @@ const initializeCSRF = async () => {
         // Get CSRF cookie first with proper credentials
         const response = await fetch('/sanctum/csrf-cookie', {
             method: 'GET',
-            credentials: 'include',
+            credentials: 'same-origin',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
@@ -88,7 +88,7 @@ window.fetch = (input, init = {}) => {
     return originalFetch(input, {
         ...init,
         headers,
-        credentials: 'include', // Always include credentials for same-origin
+        credentials: 'same-origin', // Use same-origin instead of include
     });
 };
 
