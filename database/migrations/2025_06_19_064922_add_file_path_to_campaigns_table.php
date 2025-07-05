@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('campaigns', function (Blueprint $table) {
             $table->string('file_path')->nullable()->after('retry_count');
-            $table->enum('status', ['pending', 'running', 'paused', 'completed', 'stopped'])->default('pending')->after('file_path');
+            $table->enum('status', ['pending', 'uploading', 'processing', 'running', 'paused', 'completed', 'stopped', 'failed'])->default('pending')->after('file_path');
             $table->timestamp('started_at')->nullable()->after('status');
             $table->timestamp('stopped_at')->nullable()->after('started_at');
         });

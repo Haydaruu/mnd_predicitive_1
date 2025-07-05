@@ -120,38 +120,76 @@ class CampaignController extends Controller
 
     public function upload(Request $request)
     {
-        $request->validate([
-            'campaign_name' => 'required|string',
-            'product_type' => 'required|string',
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB max
-        ]);
+        try {
+            $request->validate([
+                'campaign_name' => 'required|string|max:255',
+                'product_type' => 'required|string|max:100',
+                'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB max
+            ]);
 
-        $path = $request->file('file')->store('campaign_files');
+            Log::info('📤 Starting campaign upload', [
+                'campaign_name' => $request->campaign_name,
+                'product_type' => $request->product_type,
+                'file_name' => $request->file('file')->getClientOriginalName(),
+                'file_size' => $request->file('file')->getSize(),
+            ]);
 
-        $campaign = Campaign::create([
-            'campaign_name' => $request->campaign_name,
-            'product_type' => $request->product_type,
-            'dialing_type' => 'predictive',
-            'created_by' => auth()->user()->name,
-            'file_path' => $path,
-            'status' => 'pending',
-            'is_active' => false,
-        ]);
+            // Store the uploaded file
+            $path = $request->file('file')->store('campaign_files');
+            
+            if (!$path) {
+                Log::error('❌ Failed to store uploaded file');
+                return back()->withErrors(['file' => 'Failed to store uploaded file.']);
+            }
 
-        Log::info('✅ Campaign created', ['id' => $campaign->id, 'path' => $path]);
+            // Verify file was stored
+            if (!Storage::exists($path)) {
+                Log::error('❌ File not found after storage', ['path' => $path]);
+                return back()->withErrors(['file' => 'File was not properly stored.']);
+            }
 
-        // Process the file based on product type
-        switch ($request->product_type) {
-            case 'akulaku':  
-                ProcessAkulakuImport::dispatch($path, $campaign->id);
-                break;
-            default:
-                // For other product types, use the same import logic for now
-                ProcessAkulakuImport::dispatch($path, $campaign->id);
-                break;
+            // Create campaign record
+            $campaign = Campaign::create([
+                'campaign_name' => $request->campaign_name,
+                'product_type' => $request->product_type,
+                'dialing_type' => 'predictive',
+                'created_by' => auth()->user()->name,
+                'file_path' => $path,
+                'status' => 'uploading',
+                'is_active' => false,
+            ]);
+
+            Log::info('✅ Campaign created', [
+                'id' => $campaign->id, 
+                'path' => $path,
+                'file_size' => Storage::size($path)
+            ]);
+
+            // Dispatch import job
+            ProcessAkulakuImport::dispatch($path, $campaign->id);
+
+            Log::info('🚀 Import job dispatched', [
+                'campaign_id' => $campaign->id,
+                'job_class' => ProcessAkulakuImport::class
+            ]);
+
+            return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully and is being processed.');
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('❌ Validation failed', [
+                'errors' => $e->errors(),
+                'input' => $request->except(['file'])
+            ]);
+            return back()->withErrors($e->errors())->withInput();
+
+        } catch (\Exception $e) {
+            Log::error('❌ Upload failed', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'input' => $request->except(['file'])
+            ]);
+            return back()->withErrors(['error' => 'Upload failed: ' . $e->getMessage()]);
         }
-
-        return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully and is being processed.');
     }
 
     public function destroy(Campaign $campaign)

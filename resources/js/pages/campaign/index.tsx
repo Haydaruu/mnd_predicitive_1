@@ -4,7 +4,7 @@ import { CampaignControls } from '@/components/campaign-controls';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import { type BreadcrumbItem } from '@/types';
 import { useState, useEffect } from 'react';
-import { Trash2, Users } from 'lucide-react';
+import { Trash2, Users, RefreshCw } from 'lucide-react';
 import useCampaignStatusListener from '@/hooks/useCampaignStatusListener';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -20,9 +20,10 @@ interface Campaign {
     product_type: string;
     created_by: string;
     created_at: string;
-    status: 'pending' | 'running' | 'paused' | 'completed' | 'stopped';
+    status: 'pending' | 'uploading' | 'processing' | 'running' | 'paused' | 'completed' | 'stopped' | 'failed';
     is_active: boolean;
     nasbahs_count: number;
+    keterangan?: string;
 }
 
 interface CampaignsData {
@@ -78,6 +79,31 @@ export default function CampaignIndex() {
         }
     };
 
+    const refreshPage = () => {
+        router.reload({ only: ['campaigns'] });
+    };
+
+    const getStatusBadgeColor = (status: string) => {
+        switch (status) {
+            case 'uploading':
+                return 'bg-blue-100 text-blue-800';
+            case 'processing':
+                return 'bg-yellow-100 text-yellow-800';
+            case 'running':
+                return 'bg-green-100 text-green-800';
+            case 'paused':
+                return 'bg-orange-100 text-orange-800';
+            case 'completed':
+                return 'bg-purple-100 text-purple-800';
+            case 'stopped':
+                return 'bg-gray-100 text-gray-800';
+            case 'failed':
+                return 'bg-red-100 text-red-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Campaign List" />
@@ -86,6 +112,10 @@ export default function CampaignIndex() {
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-bold text-gray-800">📋 Campaign Management</h1>
                     <div className="flex gap-2">
+                        <Button variant="outline" onClick={refreshPage}>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Refresh
+                        </Button>
                         <Link href="/reports/dashboard">
                             <Button variant="outline">
                                 📊 Reports
@@ -124,34 +154,55 @@ export default function CampaignIndex() {
                                             >
                                                 {campaign.campaign_name}
                                             </Link>
+                                            {campaign.keterangan && (
+                                                <p className="text-xs text-red-600 mt-1">{campaign.keterangan}</p>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-800">{campaign.product_type}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-800">{campaign.nasbahs_count}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-800">
+                                            {campaign.status === 'processing' || campaign.status === 'uploading' 
+                                                ? 'Processing...' 
+                                                : campaign.nasbahs_count.toLocaleString()
+                                            }
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-gray-800">{campaign.created_by}</td>
                                         <td className="px-6 py-4 text-sm text-gray-500">
-                                            <CampaignControls 
-                                                campaign={campaign} 
-                                                onStatusChange={handleCampaignStatusChange}
-                                            />
+                                            <div className="flex flex-col gap-2">
+                                                <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeColor(campaign.status)}`}>
+                                                    {campaign.status.toUpperCase()}
+                                                </span>
+                                                {(campaign.status === 'pending' || campaign.status === 'running' || campaign.status === 'paused') && (
+                                                    <CampaignControls 
+                                                        campaign={campaign} 
+                                                        onStatusChange={handleCampaignStatusChange}
+                                                    />
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-500">
                                             <div className="flex gap-1">
-                                                <Link href={`/campaign/${campaign.id}`}>
-                                                    <Button size="sm" variant="outline">
-                                                        View
-                                                    </Button>
-                                                </Link>
-                                                <Link href={`/campaign/${campaign.id}/nasbahs`}>
-                                                    <Button size="sm" variant="outline">
-                                                        <Users className="h-4 w-4 mr-1" />
-                                                        Customers
-                                                    </Button>
-                                                </Link>
-                                                <Link href={`/reports/campaign/${campaign.id}`}>
-                                                    <Button size="sm" variant="outline">
-                                                        Reports
-                                                    </Button>
-                                                </Link>
+                                                {campaign.status !== 'uploading' && campaign.status !== 'processing' && (
+                                                    <>
+                                                        <Link href={`/campaign/${campaign.id}`}>
+                                                            <Button size="sm" variant="outline">
+                                                                View
+                                                            </Button>
+                                                        </Link>
+                                                        {campaign.nasbahs_count > 0 && (
+                                                            <Link href={`/campaign/${campaign.id}/nasbahs`}>
+                                                                <Button size="sm" variant="outline">
+                                                                    <Users className="h-4 w-4 mr-1" />
+                                                                    Customers
+                                                                </Button>
+                                                            </Link>
+                                                        )}
+                                                        <Link href={`/reports/campaign/${campaign.id}`}>
+                                                            <Button size="sm" variant="outline">
+                                                                Reports
+                                                            </Button>
+                                                        </Link>
+                                                    </>
+                                                )}
                                                 <Button 
                                                     size="sm" 
                                                     variant="destructive"
