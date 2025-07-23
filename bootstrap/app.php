@@ -36,6 +36,11 @@ return Application::configure(basePath: dirname(__DIR__))
             App\Http\Middleware\CorsMiddleware::class,
         ]);
 
+        // Add CORS middleware
+        $middleware->api(append: [
+            App\Http\Middleware\CorsMiddleware::class,
+        ]);
+
          $middleware->alias([
             'role' => RoleMiddleware::class,
         ]);

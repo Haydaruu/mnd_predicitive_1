@@ -55,7 +55,7 @@ export function AppSidebar() {
 ]: user?.role === 'Agent'? [
     {
         title: 'Agent Dashboard',
-        href: '/Dashboard',
+        href: '/dashboard',
         icon: LayoutGrid,
     },
 ]: [];

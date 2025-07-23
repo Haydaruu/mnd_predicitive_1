@@ -8,7 +8,7 @@ import { configureEcho } from '@laravel/echo-react';
 
 configureEcho({
     broadcaster: 'pusher',
-    key: import.meta.env.VITE_PUSHER_APP_KEY,
+    key: 'my-key',
     wsHost: '127.0.0.1',
     wsPort: 6001,
     forceTLS: false,
