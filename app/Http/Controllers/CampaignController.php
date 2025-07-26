@@ -132,6 +132,8 @@ class CampaignController extends Controller
                 'product_type' => $request->product_type,
                 'file_name' => $request->file('file')->getClientOriginalName(),
                 'file_size' => $request->file('file')->getSize(),
+                'user_id' => auth()->id(),
+                'user_name' => auth()->user()->name,
             ]);
 
             // Store the uploaded file
@@ -148,6 +150,21 @@ class CampaignController extends Controller
                 return back()->withErrors(['file' => 'File was not properly stored.']);
             }
 
+            // Get file size and verify it's readable
+            $fullPath = Storage::path($path);
+            $fileSize = Storage::size($path);
+            
+            if ($fileSize === 0) {
+                Log::error('❌ Uploaded file is empty', ['path' => $path]);
+                Storage::delete($path);
+                return back()->withErrors(['file' => 'Uploaded file is empty.']);
+            }
+
+            if (!is_readable($fullPath)) {
+                Log::error('❌ File is not readable', ['path' => $fullPath]);
+                Storage::delete($path);
+                return back()->withErrors(['file' => 'File is not readable.']);
+            }
             // Create campaign record
             $campaign = Campaign::create([
                 'campaign_name' => $request->campaign_name,
@@ -162,7 +179,8 @@ class CampaignController extends Controller
             Log::info('✅ Campaign created', [
                 'id' => $campaign->id, 
                 'path' => $path,
-                'file_size' => Storage::size($path)
+                'file_size' => $fileSize,
+                'full_path' => $fullPath
             ]);
 
             // Dispatch import job
@@ -173,7 +191,7 @@ class CampaignController extends Controller
                 'job_class' => ProcessAkulakuImport::class
             ]);
 
-            return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully and is being processed.');
+            return redirect()->route('campaign')->with('success', 'Campaign uploaded successfully! Processing will start shortly. Please wait for the status to change to "Pending".');
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('❌ Validation failed', [

@@ -8,7 +8,6 @@ use App\Events\CampaignStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 
 class PredictiveDialerController extends Controller
 {
@@ -88,7 +87,13 @@ class PredictiveDialerController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Predictive dialer started successfully',
-                'campaign' => $campaign->fresh(),
+                'data' => [
+                    'campaign' => $campaign->fresh(),
+                    'stats' => [
+                        'total_numbers' => $totalNumbers,
+                        'remaining_numbers' => $remainingNumbers,
+                    ]
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -139,7 +144,9 @@ class PredictiveDialerController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Predictive dialer stopped successfully',
-                'campaign' => $campaign->fresh(),
+                'data' => [
+                    'campaign' => $campaign->fresh(),
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -190,7 +197,9 @@ class PredictiveDialerController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Predictive dialer paused successfully',
-                'campaign' => $campaign->fresh(),
+                'data' => [
+                    'campaign' => $campaign->fresh(),
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -244,7 +253,9 @@ class PredictiveDialerController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Predictive dialer resumed successfully',
-                'campaign' => $campaign->fresh(),
+                'data' => [
+                    'campaign' => $campaign->fresh(),
+                ],
             ]);
 
         } catch (\Exception $e) {
@@ -280,8 +291,10 @@ class PredictiveDialerController extends Controller
 
             return response()->json([
                 'success' => true,
-                'campaign' => $campaign,
-                'stats' => $stats,
+                'data' => [
+                    'campaign' => $campaign,
+                    'stats' => $stats,
+                ],
             ]);
 
         } catch (\Exception $e) {

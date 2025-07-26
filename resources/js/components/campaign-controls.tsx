@@ -48,7 +48,7 @@ export function CampaignControls({ campaign, onStatusChange }: CampaignControlsP
             console.log('📊 Response data:', data);
 
             if (data.success) {
-                onStatusChange?.(data.campaign);
+                onStatusChange?.(data.data.campaign);
                 
                 // Show success message
                 console.log(`✅ Campaign ${action} successfully!`);

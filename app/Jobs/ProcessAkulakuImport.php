@@ -21,8 +21,8 @@ class ProcessAkulakuImport implements ShouldQueue
 
     public $filePath;
     public $campaignId;
-    public $timeout = 300; // 5 minutes timeout
-    public $tries = 3; // Maximum 3 attempts
+    public $timeout = 600; // 10 minutes timeout
+    public $tries = 1; // Only 1 attempt to avoid repeated failures
     public $maxExceptions = 3;
 
     public function __construct($filePath, $campaignId)
@@ -37,7 +37,6 @@ class ProcessAkulakuImport implements ShouldQueue
             Log::info('🎯 Starting import process', [
                 'campaign_id' => $this->campaignId,
                 'file_path' => $this->filePath,
-                'attempt' => $this->attempts(),
             ]);
 
             // Check if campaign exists
@@ -71,6 +70,30 @@ class ProcessAkulakuImport implements ShouldQueue
                 throw new Exception("File is empty: {$fullPath}");
             }
 
+            // Test if file can be opened by Excel reader
+            try {
+                $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($fullPath);
+                $reader->setReadDataOnly(true);
+                $spreadsheet = $reader->load($fullPath);
+                $worksheet = $spreadsheet->getActiveSheet();
+                $highestRow = $worksheet->getHighestRow();
+                
+                Log::info('📋 Excel file validation', [
+                    'highest_row' => $highestRow,
+                    'file_type' => get_class($reader)
+                ]);
+                
+                if ($highestRow <= 1) {
+                    throw new Exception("Excel file appears to be empty (only header row found)");
+                }
+                
+            } catch (\Exception $e) {
+                Log::error('❌ Excel file validation failed', [
+                    'error' => $e->getMessage(),
+                    'file_path' => $fullPath
+                ]);
+                throw new Exception("Invalid Excel file: " . $e->getMessage());
+            }
             // Update campaign status to processing
             $campaign->update(['status' => 'processing']);
 
@@ -78,6 +101,16 @@ class ProcessAkulakuImport implements ShouldQueue
             Log::info('🔄 Starting Excel import');
             Excel::import(new AkulakuImport($this->campaignId), $fullPath);
 
+            // Verify import results
+            $importedCount = $campaign->nasbahs()->count();
+            Log::info('📊 Import verification', [
+                'campaign_id' => $this->campaignId,
+                'imported_count' => $importedCount
+            ]);
+
+            if ($importedCount === 0) {
+                throw new Exception("No data was imported from the Excel file");
+            }
             // Update campaign status to pending (ready to start)
             $campaign->update(['status' => 'pending']);
 
@@ -86,7 +119,7 @@ class ProcessAkulakuImport implements ShouldQueue
 
             Log::info('✅ Import completed successfully', [
                 'campaign_id' => $this->campaignId,
-                'nasbahs_count' => $campaign->nasbahs()->count()
+                'nasbahs_count' => $importedCount
             ]);
 
         } catch (Exception $e) {
@@ -95,7 +128,6 @@ class ProcessAkulakuImport implements ShouldQueue
                 'file_path' => $this->filePath,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'attempt' => $this->attempts(),
             ]);
 
             // Update campaign status to failed
@@ -117,14 +149,13 @@ class ProcessAkulakuImport implements ShouldQueue
             'campaign_id' => $this->campaignId,
             'file_path' => $this->filePath,
             'error' => $exception->getMessage(),
-            'attempts' => $this->attempts(),
         ]);
 
         // Update campaign status to failed
         if ($campaign = Campaign::find($this->campaignId)) {
             $campaign->update([
                 'status' => 'failed',
-                'keterangan' => 'Import failed after ' . $this->tries . ' attempts: ' . $exception->getMessage()
+                'keterangan' => 'Import failed: ' . $exception->getMessage()
             ]);
         }
 

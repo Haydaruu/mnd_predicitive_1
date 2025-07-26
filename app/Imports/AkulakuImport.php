@@ -32,14 +32,18 @@ class AkulakuImport implements ToCollection, WithHeadingRow, WithValidation, Wit
 
         if ($rows->isEmpty()) {
             Log::warning('⚠️ No data rows found in Excel file');
-            return;
+            throw new Exception('No data rows found in Excel file');
         }
+
+        $successfulRows = 0;
+        $skippedRows = 0;
 
         foreach ($rows as $index => $row) {
             try {
                 // Skip empty rows
                 if ($this->isEmptyRow($row)) {
                     Log::debug('⏭️ Skipping empty row', ['row_index' => $index]);
+                    $skippedRows++;
                     continue;
                 }
 
@@ -68,6 +72,19 @@ class AkulakuImport implements ToCollection, WithHeadingRow, WithValidation, Wit
                     continue;
                 }
 
+                // Check for duplicate phone numbers in this campaign
+                $existingNasbah = Nasbah::where('campaign_id', $this->campaignId)
+                    ->where('phone', $phone)
+                    ->first();
+                
+                if ($existingNasbah) {
+                    Log::debug('⏭️ Skipping duplicate phone number', [
+                        'phone' => $phone,
+                        'existing_id' => $existingNasbah->id
+                    ]);
+                    $skippedRows++;
+                    continue;
+                }
                 // Create Nasbah record
                 $nasbah = Nasbah::create([
                     'campaign_id' => $this->campaignId,
@@ -87,6 +104,7 @@ class AkulakuImport implements ToCollection, WithHeadingRow, WithValidation, Wit
                 ]);
 
                 $this->processedRows++;
+                $successfulRows++;
 
                 if ($this->processedRows % 100 === 0) {
                     Log::info('📈 Import progress', [
@@ -113,6 +131,10 @@ class AkulakuImport implements ToCollection, WithHeadingRow, WithValidation, Wit
             'error_rows' => $this->errorRows,
             'total_rows' => $rows->count()
         ]);
+
+        if ($successfulRows === 0) {
+            throw new Exception("No valid data rows were imported. Please check your Excel file format.");
+        }
     }
 
     public function rules(): array
